@@ -89,12 +89,29 @@ export AGENT_PEER_REVIEW_TOOLKIT_HOME=/path/to/agent-peer-review
    - `config/claude-agents.example.json`
 4. Install the Codex skill or Claude custom agent on your machine if you want the one-agent launcher flow.
 
+### Claude Package
+
+Anthropic officially supports user-level and project-level subagents stored under `.claude/agents/`.
+
+This repo includes a Claude-friendly package here:
+
+- `claude-package/.claude/agents/peer-review-orchestrator.md`
+
+You can install it either:
+
+- globally, by copying it into `~/.claude/agents/`
+- per-project, by copying it into `<target-repo>/.claude/agents/`
+
+See `claude-package/README.md` for the exact steps.
+
 ## Layout
 
 - `config/agents.example.json`
   - agent command templates and permission profiles
 - `config/claude-agents.example.json`
   - Claude custom-agent example for orchestration
+- `claude-package/`
+  - Claude-friendly package with a ready-to-install subagent under `.claude/agents/`
 - `prompts/`
   - builder and reviewer prompt shells
 - `schemas/`
@@ -130,6 +147,8 @@ Install or symlink the included skill, set `AGENT_PEER_REVIEW_TOOLKIT_HOME`, the
 ### Starting from Claude
 
 Claude does not use Codex-style skills. Its closest equivalent is a custom agent definition. The example in `config/claude-agents.example.json` is the right shape: set `AGENT_PEER_REVIEW_TOOLKIT_HOME`, start Claude with that agent, and ask it to run the peer-review loop.
+
+The repo also includes a Claude-friendly package using Anthropic's documented `.claude/agents/` subagent format for easier installation and sharing.
 
 ## Internal Implementation
 
