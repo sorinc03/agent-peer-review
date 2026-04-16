@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "summary",
+    "files_touched",
+    "tests_run",
+    "known_risks",
+    "notes_for_reviewer"
+  ],
+  "properties": {
+    "summary": {
+      "type": "string"
+    },
+    "files_touched": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "tests_run": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "known_risks": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "notes_for_reviewer": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

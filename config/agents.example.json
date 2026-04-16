@@ -1,0 +1,128 @@
+{
+  "default_rounds": 2,
+  "profiles": {
+    "codex-builder": {
+      "role": "builder",
+      "vendor": "codex",
+      "command": [
+        "codex",
+        "exec",
+        "-C",
+        "{repo}",
+        "--add-dir",
+        "{repo}",
+        "--output-schema",
+        "{schema_path}",
+        "-"
+      ],
+      "permission_profiles": {
+        "read_only": [
+          "--sandbox",
+          "read-only"
+        ],
+        "workspace_write": [
+          "--full-auto"
+        ],
+        "danger_full_access": [
+          "--dangerously-bypass-approvals-and-sandbox"
+        ]
+      },
+      "default_permission": "workspace_write"
+    },
+    "codex-reviewer": {
+      "role": "reviewer",
+      "vendor": "codex",
+      "command": [
+        "codex",
+        "exec",
+        "-C",
+        "{repo}",
+        "--add-dir",
+        "{repo}",
+        "--output-schema",
+        "{schema_path}",
+        "-"
+      ],
+      "permission_profiles": {
+        "read_only": [
+          "--sandbox",
+          "read-only"
+        ],
+        "workspace_write": [
+          "--sandbox",
+          "workspace-write"
+        ],
+        "danger_full_access": [
+          "--dangerously-bypass-approvals-and-sandbox"
+        ]
+      },
+      "default_permission": "read_only"
+    },
+    "claude-builder": {
+      "role": "builder",
+      "vendor": "claude",
+      "command": [
+        "claude",
+        "-p",
+        "--output-format",
+        "json",
+        "--json-schema",
+        "{schema_inline}",
+        "--add-dir",
+        "{repo}"
+      ],
+      "permission_profiles": {
+        "default": [
+          "--permission-mode",
+          "default"
+        ],
+        "accept_edits": [
+          "--permission-mode",
+          "acceptEdits"
+        ],
+        "auto": [
+          "--permission-mode",
+          "auto"
+        ],
+        "bypass_permissions": [
+          "--permission-mode",
+          "bypassPermissions"
+        ]
+      },
+      "default_permission": "accept_edits"
+    },
+    "claude-reviewer": {
+      "role": "reviewer",
+      "vendor": "claude",
+      "command": [
+        "claude",
+        "-p",
+        "--output-format",
+        "json",
+        "--json-schema",
+        "{schema_inline}",
+        "--add-dir",
+        "{repo}"
+      ],
+      "permission_profiles": {
+        "default": [
+          "--permission-mode",
+          "default"
+        ],
+        "plan": [
+          "--permission-mode",
+          "plan"
+        ],
+        "dont_ask": [
+          "--permission-mode",
+          "dontAsk"
+        ],
+        "bypass_permissions": [
+          "--permission-mode",
+          "bypassPermissions"
+        ]
+      },
+      "default_permission": "default"
+    }
+  }
+}

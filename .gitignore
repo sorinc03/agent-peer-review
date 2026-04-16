@@ -1,0 +1,4 @@
+.peer-review/
+.peer-review-worktrees/
+__pycache__/
+*.pyc
