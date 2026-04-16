@@ -147,6 +147,82 @@ cp "$AGENT_PEER_REVIEW_TOOLKIT_HOME/claude-package/.claude/agents/peer-review-or
 
 See `claude-package/README.md` for the exact steps.
 
+## Sanity Check
+
+Before relying on the workflow, verify three things:
+
+1. Your shell can see the toolkit path:
+
+```bash
+echo "$AGENT_PEER_REVIEW_TOOLKIT_HOME"
+```
+
+2. Codex can see the skill:
+
+```bash
+ls -la ~/.codex/skills/peer-review-orchestrator
+```
+
+3. Claude can see the subagent:
+
+```bash
+ls -la ~/.claude/agents/peer-review-orchestrator.md
+```
+
+If you just added the environment variable, reload your shell first:
+
+```bash
+source ~/.zshrc
+```
+
+### Codex Smoke Test
+
+Start `codex` and paste:
+
+```text
+Use the peer-review process for a small test task.
+
+- repo: /path/to/some-project
+- task: /path/to/task.md
+- builder: codex-builder
+- reviewer: codex-reviewer
+- builder permission: workspace_write
+- reviewer permission: read_only
+- create worktree: yes
+
+Use the installed peer-review skill yourself. Do not ask me to run a Python command manually.
+```
+
+Expected result:
+
+- Codex recognizes the peer-review workflow
+- Codex does not ask you to invoke `scripts/peer_review.py` yourself
+- Codex gathers or confirms the repo, task, permissions, and pairing
+
+### Claude Smoke Test
+
+Start `claude` and paste:
+
+```text
+Use the peer-review process for a small test task.
+
+- repo: /path/to/some-project
+- task: /path/to/task.md
+- builder: claude-builder
+- reviewer: claude-reviewer
+- builder permission: accept_edits
+- reviewer permission: default
+- create worktree: yes
+
+Use the installed peer-review subagent yourself. Do not ask me to run a Python command manually.
+```
+
+Expected result:
+
+- Claude recognizes the peer-review workflow
+- Claude does not ask you to invoke `scripts/peer_review.py` yourself
+- Claude gathers or confirms the repo, task, permissions, and pairing
+
 ## Layout
 
 - `config/agents.example.json`
