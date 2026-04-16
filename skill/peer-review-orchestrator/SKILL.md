@@ -19,8 +19,10 @@ The human-facing entry point is the conversation with Codex, not a shell command
    - builder permission
    - reviewer permission
    - whether to create a worktree
-2. Prefer worktree mode unless the user explicitly asks to operate in-place.
-3. Run:
+2. If the user does not specify builder or reviewer permissions for this run, use the defaults configured in `config/agents.example.json`.
+3. If the user does specify builder or reviewer permissions for this run, pass those overrides explicitly.
+4. Prefer worktree mode unless the user explicitly asks to operate in-place.
+5. Run:
 
 ```bash
 python3 "$AGENT_PEER_REVIEW_TOOLKIT_HOME/scripts/peer_review.py" \
@@ -33,8 +35,8 @@ python3 "$AGENT_PEER_REVIEW_TOOLKIT_HOME/scripts/peer_review.py" \
   [--create-worktree]
 ```
 
-4. Read the generated `final-summary.md` from the run artifact directory.
-5. Summarize the result for the user and make the human checkpoint explicit.
+6. Read the generated `final-summary.md` from the run artifact directory.
+7. Summarize the result for the user and make the human checkpoint explicit.
 
 If `AGENT_PEER_REVIEW_TOOLKIT_HOME` is not set, stop and ask the user to configure it for their machine.
 
@@ -43,6 +45,7 @@ If `AGENT_PEER_REVIEW_TOOLKIT_HOME` is not set, stop and ask the user to configu
 - Prefer `codex-builder` + `claude-reviewer` unless the user asks otherwise.
 - Prefer builder permission that allows edits.
 - Prefer reviewer permission that keeps the reviewer read-only.
+- Prefer `claude-reviewer` permission `plan` when Claude is reviewing.
 - Prefer `--create-worktree`.
 
 ## Do not do this

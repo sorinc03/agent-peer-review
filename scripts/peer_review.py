@@ -7,9 +7,11 @@ import json
 import os
 import re
 import shlex
+import secrets
 import subprocess
 import sys
 from datetime import datetime, timezone
+from json import JSONDecodeError
 from pathlib import Path
 from typing import Any
 
@@ -23,7 +25,13 @@ def write_text(path: Path, content: str) -> None:
     path.write_text(content, encoding="utf-8")
 
 
-def run(cmd: list[str], *, cwd: Path, stdin: str | None = None) -> subprocess.CompletedProcess[str]:
+def run(
+    cmd: list[str],
+    *,
+    cwd: Path,
+    stdin: str | None = None,
+    timeout_seconds: int | None = None,
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         cmd,
         cwd=str(cwd),
@@ -31,6 +39,7 @@ def run(cmd: list[str], *, cwd: Path, stdin: str | None = None) -> subprocess.Co
         text=True,
         capture_output=True,
         check=False,
+        timeout=timeout_seconds,
     )
 
 
@@ -48,12 +57,51 @@ def extract_json(raw: str) -> Any:
 
     try:
         return json.loads(text)
-    except json.JSONDecodeError:
-        start = text.find("{")
-        end = text.rfind("}")
-        if start == -1 or end == -1 or end <= start:
-            raise
-        return json.loads(text[start : end + 1])
+    except JSONDecodeError as original_error:
+        for candidate in iter_json_object_candidates(text):
+            try:
+                return json.loads(candidate)
+            except JSONDecodeError:
+                continue
+        raise ValueError("Could not extract a valid JSON object from agent output") from original_error
+
+
+def iter_json_object_candidates(text: str) -> list[str]:
+    candidates: list[str] = []
+    start: int | None = None
+    depth = 0
+    in_string = False
+    escaped = False
+
+    for index, char in enumerate(text):
+        if start is None:
+            if char == "{":
+                start = index
+                depth = 1
+                in_string = False
+                escaped = False
+            continue
+
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+
+        if char == '"':
+            in_string = True
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                candidates.append(text[start : index + 1])
+                start = None
+
+    return candidates
 
 
 def render_template(template: str, values: dict[str, str]) -> str:
@@ -82,6 +130,10 @@ def splice_args(command: list[str], extra_args: list[str]) -> list[str]:
 def slugify(value: str) -> str:
     slug = re.sub(r"[^a-zA-Z0-9]+", "-", value.strip().lower()).strip("-")
     return slug or "task"
+
+
+def build_run_id(timestamp: str, slug: str) -> str:
+    return f"{timestamp}-{slug}-{secrets.token_hex(3)}"
 
 
 def build_command(
@@ -121,6 +173,7 @@ def invoke_agent(
     artifact_dir: Path,
     prefix: str,
     permission_name: str | None,
+    timeout_seconds: int | None,
 ) -> tuple[dict[str, Any], str]:
     command, resolved_permission = build_command(
         profile_name=profile_name,
@@ -133,9 +186,25 @@ def invoke_agent(
     write_text(artifact_dir / f"{prefix}.command.txt", " ".join(shlex.quote(part) for part in command) + "\n")
     write_text(artifact_dir / f"{prefix}.prompt.md", prompt)
 
-    result = run(command, cwd=repo, stdin=prompt)
-    write_text(artifact_dir / f"{prefix}.stdout.txt", result.stdout)
-    write_text(artifact_dir / f"{prefix}.stderr.txt", result.stderr)
+    try:
+        result = run(command, cwd=repo, stdin=prompt, timeout_seconds=timeout_seconds)
+        stdout = result.stdout
+        stderr = result.stderr
+    except subprocess.TimeoutExpired as exc:
+        stdout = exc.stdout or ""
+        stderr = (exc.stderr or "").rstrip()
+        if stderr:
+            stderr += "\n"
+        stderr += f"Timed out after {timeout_seconds} seconds.\n"
+        write_text(artifact_dir / f"{prefix}.stdout.txt", stdout)
+        write_text(artifact_dir / f"{prefix}.stderr.txt", stderr)
+        raise RuntimeError(
+            f"{profile_name} timed out after {timeout_seconds} seconds.\n"
+            f"See {artifact_dir / f'{prefix}.stderr.txt'}"
+        ) from exc
+
+    write_text(artifact_dir / f"{prefix}.stdout.txt", stdout)
+    write_text(artifact_dir / f"{prefix}.stderr.txt", stderr)
 
     if result.returncode != 0:
         raise RuntimeError(
@@ -143,16 +212,30 @@ def invoke_agent(
             f"See {artifact_dir / f'{prefix}.stderr.txt'}"
         )
 
-    payload = extract_json(result.stdout)
+    payload = extract_json(stdout)
     write_text(artifact_dir / f"{prefix}.response.json", json.dumps(payload, indent=2) + "\n")
     return payload, resolved_permission
 
 
-def create_worktree(base_repo: Path, *, slug: str, timestamp: str, requested_root: str | None) -> tuple[Path, str]:
+def build_worktree_plan(
+    base_repo: Path,
+    *,
+    run_id: str,
+    requested_root: str | None,
+) -> tuple[Path, str]:
     root = Path(os.path.expanduser(requested_root)).resolve() if requested_root else base_repo / ".peer-review-worktrees"
-    root.mkdir(parents=True, exist_ok=True)
-    branch = f"peer-review/{slug}-{timestamp}"
-    worktree_path = root / f"{timestamp}-{slug}"
+    branch = f"peer-review/{run_id}"
+    worktree_path = root / run_id
+    return worktree_path, branch
+
+
+def create_worktree(base_repo: Path, *, run_id: str, requested_root: str | None) -> tuple[Path, str]:
+    worktree_path, branch = build_worktree_plan(
+        base_repo,
+        run_id=run_id,
+        requested_root=requested_root,
+    )
+    worktree_path.parent.mkdir(parents=True, exist_ok=True)
 
     result = run(["git", "worktree", "add", "-b", branch, str(worktree_path), "HEAD"], cwd=base_repo)
     if result.returncode != 0:
@@ -321,8 +404,10 @@ def main() -> int:
     parser.add_argument("--builder-permission", default=None, help="Permission profile for builder")
     parser.add_argument("--reviewer-permission", default=None, help="Permission profile for reviewer")
     parser.add_argument("--rounds", type=int, default=None, help="Maximum build/review rounds")
+    parser.add_argument("--agent-timeout-seconds", type=int, default=None, help="Timeout per agent invocation in seconds")
     parser.add_argument("--create-worktree", action="store_true", help="Create an isolated git worktree for the run")
     parser.add_argument("--worktree-root", default=None, help="Directory under which task worktrees should be created")
+    parser.add_argument("--dry-run", action="store_true", help="Print the resolved run plan and commands without executing agents")
     parser.add_argument(
         "--config",
         default=str(root / "config" / "agents.example.json"),
@@ -343,23 +428,42 @@ def main() -> int:
         if name not in profiles:
             raise SystemExit(f"Unknown agent profile: {name}")
 
-    max_rounds = args.rounds or int(config.get("default_rounds", 2))
+    max_rounds = int(config.get("default_rounds", 2)) if args.rounds is None else args.rounds
+    if max_rounds < 1:
+        raise SystemExit("--rounds must be at least 1")
+
+    agent_timeout_seconds = (
+        int(config.get("default_agent_timeout_seconds", 1800))
+        if args.agent_timeout_seconds is None
+        else args.agent_timeout_seconds
+    )
+    if agent_timeout_seconds < 1:
+        raise SystemExit("--agent-timeout-seconds must be at least 1")
+
     task_spec = read_text(task_path)
     baseline = git(base_repo, "rev-parse", "HEAD")
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     slug = slugify(task_path.stem)
+    run_id = build_run_id(timestamp, slug)
 
     repo_for_run = base_repo
     worktree_branch: str | None = None
+    planned_worktree_path: Path | None = None
     if args.create_worktree:
-        repo_for_run, worktree_branch = create_worktree(
+        planned_worktree_path, worktree_branch = build_worktree_plan(
             base_repo,
-            slug=slug,
-            timestamp=timestamp,
+            run_id=run_id,
             requested_root=args.worktree_root,
         )
+        repo_for_run = planned_worktree_path
+        if not args.dry_run:
+            repo_for_run, worktree_branch = create_worktree(
+                base_repo,
+                run_id=run_id,
+                requested_root=args.worktree_root,
+            )
 
-    artifact_dir = repo_for_run / ".peer-review" / "runs" / f"{timestamp}-{slug}"
+    artifact_dir = base_repo / ".peer-review" / "runs" / run_id
     artifact_dir.mkdir(parents=True, exist_ok=True)
     write_text(artifact_dir / "task.md", task_spec)
 
@@ -371,9 +475,12 @@ def main() -> int:
         "reviewer": args.reviewer,
         "builder_permission_requested": args.builder_permission,
         "reviewer_permission_requested": args.reviewer_permission,
+        "agent_timeout_seconds": agent_timeout_seconds,
         "create_worktree": args.create_worktree,
         "worktree_branch": worktree_branch,
         "timestamp_utc": timestamp,
+        "run_id": run_id,
+        "dry_run": args.dry_run,
     }
     write_text(artifact_dir / "metadata.json", json.dumps(metadata, indent=2) + "\n")
 
@@ -382,10 +489,44 @@ def main() -> int:
     build_schema_path = root / "schemas" / "build-report.schema.json"
     review_schema_path = root / "schemas" / "review-report.schema.json"
 
+    builder_preview_command, final_builder_permission = build_command(
+        profile_name=args.builder,
+        profiles=profiles,
+        repo=repo_for_run,
+        schema_path=build_schema_path,
+        permission_name=args.builder_permission,
+    )
+    reviewer_preview_command, final_reviewer_permission = build_command(
+        profile_name=args.reviewer,
+        profiles=profiles,
+        repo=repo_for_run,
+        schema_path=review_schema_path,
+        permission_name=args.reviewer_permission,
+    )
+
+    if args.dry_run:
+        summary = {
+            "repo": str(base_repo),
+            "repo_for_run": str(repo_for_run),
+            "baseline": baseline,
+            "builder": args.builder,
+            "reviewer": args.reviewer,
+            "builder_permission": final_builder_permission,
+            "reviewer_permission": final_reviewer_permission,
+            "agent_timeout_seconds": agent_timeout_seconds,
+            "worktree_branch": worktree_branch,
+            "create_worktree": args.create_worktree,
+            "artifact_dir": str(artifact_dir),
+            "builder_command": builder_preview_command,
+            "reviewer_command": reviewer_preview_command,
+            "dry_run": True,
+        }
+        write_text(artifact_dir / "dry-run.json", json.dumps(summary, indent=2) + "\n")
+        print(json.dumps(summary, indent=2))
+        return 0
+
     review_findings = ""
     last_review: dict[str, Any] | None = None
-    final_builder_permission = args.builder_permission or profiles[args.builder].get("default_permission")
-    final_reviewer_permission = args.reviewer_permission or profiles[args.reviewer].get("default_permission")
     round_summaries: list[dict[str, Any]] = []
     final_status_short = ""
     rounds_completed = 0
@@ -411,6 +552,7 @@ def main() -> int:
             artifact_dir=artifact_dir,
             prefix=f"round-{round_number}.builder",
             permission_name=args.builder_permission,
+            timeout_seconds=agent_timeout_seconds,
         )
 
         diff_stat, diff_patch, final_status_short = collect_diff(repo_for_run, baseline)
@@ -437,6 +579,7 @@ def main() -> int:
             artifact_dir=artifact_dir,
             prefix=f"round-{round_number}.reviewer",
             permission_name=args.reviewer_permission,
+            timeout_seconds=agent_timeout_seconds,
         )
 
         round_summaries.append(
@@ -500,6 +643,7 @@ def main() -> int:
         "reviewer": args.reviewer,
         "builder_permission": final_builder_permission,
         "reviewer_permission": final_reviewer_permission,
+        "agent_timeout_seconds": agent_timeout_seconds,
         "worktree_branch": worktree_branch,
         "rounds_completed": rounds_completed,
         "max_rounds": max_rounds,

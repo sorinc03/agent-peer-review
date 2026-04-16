@@ -95,14 +95,27 @@ This avoids leaking half-finished agent edits into your main checkout.
 
 Permissions should be an explicit part of the run contract.
 
+Humans should be able to set them at two levels:
+
+- defaults in `config/agents.example.json`
+- per-run overrides in the launcher request
+
+Per-run values should win when both are present.
+
 Examples:
 
 - Codex builder: `workspace_write`
 - Codex reviewer: `read_only`
 - Claude builder: `accept_edits`
-- Claude reviewer: `default`
+- Claude reviewer: `plan`
 
 This matters because an unrestricted reviewer stops being a reviewer.
+
+Recommended policy:
+
+- give the builder the minimum edit-capable permission that still lets it complete the task
+- keep the reviewer read-only by default
+- prefer `plan` for Claude reviewers because it keeps review behavior aligned with the reviewer role
 
 ## Why this works
 
@@ -149,7 +162,7 @@ Use a Codex skill that tells Codex:
 
 ### Claude path
 
-Claude does not share Codex's skill system. The equivalent is a custom agent definition or a pinned system prompt. That launcher should call the same local orchestrator script, resolved from `AGENT_PEER_REVIEW_TOOLKIT_HOME`, so behavior stays aligned.
+Claude does not share Codex's skill system. The normal install path in this repo is the Markdown subagent under `.claude/agents/`. An optional custom-agent JSON example is also included for teams that manage their own startup wrapper or agent catalog. Both launch paths should call the same local orchestrator script, resolved from `AGENT_PEER_REVIEW_TOOLKIT_HOME`, so behavior stays aligned.
 
 ## Failure modes to guard against
 
@@ -175,4 +188,4 @@ Fix: default to worktree mode.
 
 ### 5. Reviewer silently edits
 
-Fix: explicit reviewer permission profile set to read-only/default.
+Fix: explicit reviewer permission profile set to read-only or `plan`.
