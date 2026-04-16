@@ -4,6 +4,8 @@
 
 Treat builder and reviewer as interchangeable workers behind a stable contract. The orchestrator should not care whether the builder is Codex and the reviewer is Claude, or the reverse.
 
+It also should not care whether both roles come from the same model family. Same-type pairings such as `codex-builder` + `codex-reviewer` and `claude-builder` + `claude-reviewer` are valid as long as role separation and reviewer constraints are preserved.
+
 ## Core entities
 
 ### 1. Task spec

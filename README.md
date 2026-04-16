@@ -54,6 +54,25 @@ Do not let the same agent both implement and approve in one pass.
   - emit a JSON review report
   - stay read-only by default
 
+## Supported Pairings
+
+The workflow supports both mixed-model and same-model pairings.
+
+Examples:
+
+- `codex-builder` + `claude-reviewer`
+- `claude-builder` + `codex-reviewer`
+- `codex-builder` + `codex-reviewer`
+- `claude-builder` + `claude-reviewer`
+
+The important requirement is role separation, not vendor separation:
+
+- the builder and reviewer should be different roles
+- the reviewer should stay constrained
+- the handoff should stay structured
+
+Using different model families can give you a more independent second opinion. Using the same model family still works, as long as the reviewer prompt, permissions, and artifact contract are strict.
+
 ## New capabilities in this scaffold
 
 - Per-agent permission profiles
