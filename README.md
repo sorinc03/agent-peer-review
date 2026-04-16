@@ -106,7 +106,23 @@ export AGENT_PEER_REVIEW_TOOLKIT_HOME=/path/to/agent-peer-review
 3. Copy or adapt:
    - `config/agents.example.json`
    - `config/claude-agents.example.json`
-4. Install the Codex skill or Claude custom agent on your machine if you want the one-agent launcher flow.
+4. Install the Codex skill and/or Claude subagent if you want the one-agent launcher flow.
+
+### Codex Skill
+
+This repo ships a Codex skill here:
+
+- `skill/peer-review-orchestrator/`
+
+Install it into your local Codex skills directory:
+
+```bash
+mkdir -p ~/.codex/skills
+ln -sfn "$AGENT_PEER_REVIEW_TOOLKIT_HOME/skill/peer-review-orchestrator" \
+  ~/.codex/skills/peer-review-orchestrator
+```
+
+After that, start `codex` and ask it to use the peer-review process. The skill gives Codex the workflow and tells it to run the internal orchestrator itself.
 
 ### Claude Package
 
@@ -120,6 +136,14 @@ You can install it either:
 
 - globally, by copying it into `~/.claude/agents/`
 - per-project, by copying it into `<target-repo>/.claude/agents/`
+
+For a global install:
+
+```bash
+mkdir -p ~/.claude/agents
+cp "$AGENT_PEER_REVIEW_TOOLKIT_HOME/claude-package/.claude/agents/peer-review-orchestrator.md" \
+  ~/.claude/agents/peer-review-orchestrator.md
+```
 
 See `claude-package/README.md` for the exact steps.
 
