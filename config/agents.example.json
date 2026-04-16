@@ -5,6 +5,7 @@
     "codex-builder": {
       "role": "builder",
       "vendor": "codex",
+      "output_extract_path": [],
       "command": [
         "codex",
         "exec",
@@ -33,6 +34,7 @@
     "codex-reviewer": {
       "role": "reviewer",
       "vendor": "codex",
+      "output_extract_path": [],
       "command": [
         "codex",
         "exec",
@@ -62,6 +64,9 @@
     "claude-builder": {
       "role": "builder",
       "vendor": "claude",
+      "output_extract_path": [
+        "structured_output"
+      ],
       "command": [
         "claude",
         "-p",
@@ -95,6 +100,9 @@
     "claude-reviewer": {
       "role": "reviewer",
       "vendor": "claude",
+      "output_extract_path": [
+        "structured_output"
+      ],
       "command": [
         "claude",
         "-p",

@@ -42,6 +42,29 @@ class PeerReviewHelpersTest(unittest.TestCase):
         self.assertTrue(payload["approved"])
         self.assertEqual(payload["summary"], "ok")
 
+    def test_extract_profile_payload_unwraps_claude_envelope(self):
+        envelope = {
+            "type": "result",
+            "subtype": "success",
+            "result": "Done.",
+            "structured_output": {
+                "approved": True,
+                "summary": "hi",
+                "blocker_count": 0,
+                "findings": [],
+                "test_gaps": [],
+                "next_action": "approve",
+            },
+        }
+
+        payload = self.module.extract_profile_payload(
+            envelope,
+            {"output_extract_path": ["structured_output"]},
+        )
+
+        self.assertEqual(payload["summary"], "hi")
+        self.assertTrue(payload["approved"])
+
     def test_build_run_id_adds_random_suffix(self):
         with mock.patch.object(self.module.secrets, "token_hex", side_effect=["abc123", "def456"]):
             first = self.module.build_run_id("20260416-220000", "task")
@@ -70,6 +93,7 @@ class PeerReviewHelpersTest(unittest.TestCase):
             profiles = {
                 "builder": {
                     "command": ["builder", "{repo}", "{schema_path}", "-"],
+                    "output_extract_path": [],
                     "permission_profiles": {
                         "workspace_write": ["--builder-write"],
                         "read_only": ["--builder-read"],
@@ -78,6 +102,7 @@ class PeerReviewHelpersTest(unittest.TestCase):
                 },
                 "reviewer": {
                     "command": ["reviewer", "{repo}", "{schema_path}", "-"],
+                    "output_extract_path": ["structured_output"],
                     "permission_profiles": {
                         "read_only": ["--reviewer-read"],
                         "workspace_write": ["--reviewer-write"],
@@ -105,6 +130,11 @@ class PeerReviewHelpersTest(unittest.TestCase):
         self.assertEqual(reviewer_permission, "read_only")
         self.assertIn("--builder-write", builder_command)
         self.assertIn("--reviewer-read", reviewer_command)
+
+    def test_extract_profile_payload_without_path_returns_envelope(self):
+        payload = {"summary": "ok"}
+        extracted = self.module.extract_profile_payload(payload, {"output_extract_path": []})
+        self.assertEqual(extracted, payload)
 
 
 class PeerReviewCliTest(unittest.TestCase):

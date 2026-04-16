@@ -28,8 +28,11 @@
         "additionalProperties": false,
         "required": [
           "severity",
+          "file",
+          "line",
           "title",
-          "detail"
+          "detail",
+          "suggested_fix"
         ],
         "properties": {
           "severity": {
@@ -42,10 +45,16 @@
             ]
           },
           "file": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "line": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "minimum": 1
           },
           "title": {
@@ -55,7 +64,10 @@
             "type": "string"
           },
           "suggested_fix": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       }

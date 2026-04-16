@@ -163,6 +163,19 @@ def build_command(
     return splice_args(base_command, permission_profiles[permission]), permission
 
 
+def extract_profile_payload(payload: Any, profile: dict[str, Any]) -> dict[str, Any]:
+    path = profile.get("output_extract_path", [])
+    current = payload
+    for key in path:
+        if not isinstance(current, dict) or key not in current:
+            raise ValueError(f"Could not extract structured output via path: {path}")
+        current = current[key]
+
+    if not isinstance(current, dict):
+        raise ValueError("Extracted structured output is not a JSON object")
+    return current
+
+
 def invoke_agent(
     *,
     repo: Path,
@@ -175,6 +188,7 @@ def invoke_agent(
     permission_name: str | None,
     timeout_seconds: int | None,
 ) -> tuple[dict[str, Any], str]:
+    profile = profiles[profile_name]
     command, resolved_permission = build_command(
         profile_name=profile_name,
         profiles=profiles,
@@ -212,8 +226,11 @@ def invoke_agent(
             f"See {artifact_dir / f'{prefix}.stderr.txt'}"
         )
 
-    payload = extract_json(stdout)
+    envelope = extract_json(stdout)
+    payload = extract_profile_payload(envelope, profile)
     write_text(artifact_dir / f"{prefix}.response.json", json.dumps(payload, indent=2) + "\n")
+    if payload is not envelope:
+        write_text(artifact_dir / f"{prefix}.envelope.json", json.dumps(envelope, indent=2) + "\n")
     return payload, resolved_permission
 
 

@@ -286,6 +286,19 @@ Expected result:
 - Claude does not ask you to invoke `scripts/peer_review.py` yourself
 - Claude gathers or confirms the repo, task, permissions, and pairing
 
+### Optional Live CLI Integration Checks
+
+The default unit suite does not require authenticated agent CLIs. If you want to verify the real Codex and Claude integrations on a machine that has both CLIs installed and authenticated, run:
+
+```bash
+CI_HAS_CLI_AGENTS=1 python3 -m unittest discover -s tests -p 'test_*.py' -v
+```
+
+That adds gated live checks for:
+
+- Claude's JSON envelope plus `structured_output` extraction
+- Codex acceptance of `schemas/review-report.schema.json`
+
 ## Troubleshooting
 
 ### `AGENT_PEER_REVIEW_TOOLKIT_HOME` is unset
@@ -334,7 +347,7 @@ Expected result:
 ## Layout
 
 - `config/agents.example.json`
-  - agent command templates and permission profiles
+  - agent command templates, permission profiles, and output extraction paths
 - `config/claude-agents.example.json`
   - optional Claude custom-agent example for teams that manage a custom-agent catalog
 - `claude-package/`
