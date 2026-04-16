@@ -17,6 +17,28 @@ The stable contract is:
 
 That is what keeps the loop disciplined.
 
+## Quick Start
+
+1. Clone this repo anywhere.
+2. Set:
+
+```bash
+export AGENT_PEER_REVIEW_TOOLKIT_HOME=/path/to/agent-peer-review
+```
+
+3. Launch `codex` or `claude`.
+4. Ask that agent to use the peer-review process with:
+   - the target repo
+   - the task spec path
+   - the builder and reviewer identities
+   - the builder and reviewer permission modes
+5. Let the launching agent orchestrate the loop internally and return the final summary.
+
+Start from these example prompts:
+
+- Codex: `examples/start-from-codex.md`
+- Claude: `examples/start-from-claude.md`
+
 ## Recommended operating model
 
 Do not let the same agent both implement and approve in one pass.
