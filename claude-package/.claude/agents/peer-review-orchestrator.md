@@ -36,6 +36,7 @@ python3 "$AGENT_PEER_REVIEW_TOOLKIT_HOME/scripts/peer_review.py" \
 
 7. Read the generated `final-summary.md` from the run artifact directory.
 8. Summarize the result for the user and make the human checkpoint explicit.
+9. While the script is running, relay concise progress updates when the orchestrator emits stage or heartbeat messages. Do not leave the user waiting without feedback during long review passes.
 
 ## Defaults
 

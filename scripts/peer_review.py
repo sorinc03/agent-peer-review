@@ -10,6 +10,7 @@ import shlex
 import secrets
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from json import JSONDecodeError
 from pathlib import Path
@@ -23,6 +24,19 @@ def read_text(path: Path) -> str:
 def write_text(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
+
+
+def append_text(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(content)
+
+
+def emit_progress(message: str, *, artifact_dir: Path | None = None) -> None:
+    line = f"[peer-review] {message}"
+    print(line, file=sys.stderr, flush=True)
+    if artifact_dir is not None:
+        append_text(artifact_dir / "progress.log", line + "\n")
 
 
 def run(
@@ -187,6 +201,7 @@ def invoke_agent(
     prefix: str,
     permission_name: str | None,
     timeout_seconds: int | None,
+    heartbeat_seconds: int | None,
 ) -> tuple[dict[str, Any], str]:
     profile = profiles[profile_name]
     command, resolved_permission = build_command(
@@ -200,10 +215,69 @@ def invoke_agent(
     write_text(artifact_dir / f"{prefix}.command.txt", " ".join(shlex.quote(part) for part in command) + "\n")
     write_text(artifact_dir / f"{prefix}.prompt.md", prompt)
 
+    emit_progress(
+        f"Starting {profile_name} for {prefix} with permission {resolved_permission}.",
+        artifact_dir=artifact_dir,
+    )
+
+    stdout = ""
+    stderr = ""
+    start_time = time.monotonic()
+
     try:
-        result = run(command, cwd=repo, stdin=prompt, timeout_seconds=timeout_seconds)
-        stdout = result.stdout
-        stderr = result.stderr
+        process = subprocess.Popen(
+            command,
+            cwd=str(repo),
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+
+        assert process.stdin is not None
+        process.stdin.write(prompt)
+        process.stdin.close()
+        process.stdin = None
+
+        next_heartbeat_at = start_time + heartbeat_seconds if heartbeat_seconds else None
+        deadline = start_time + timeout_seconds if timeout_seconds is not None else None
+
+        while True:
+            now = time.monotonic()
+            if deadline is not None and now >= deadline:
+                process.kill()
+                stdout, stderr = process.communicate()
+                stderr = stderr.rstrip()
+                if stderr:
+                    stderr += "\n"
+                stderr += f"Timed out after {timeout_seconds} seconds.\n"
+                write_text(artifact_dir / f"{prefix}.stdout.txt", stdout)
+                write_text(artifact_dir / f"{prefix}.stderr.txt", stderr)
+                raise RuntimeError(
+                    f"{profile_name} timed out after {timeout_seconds} seconds.\n"
+                    f"See {artifact_dir / f'{prefix}.stderr.txt'}"
+                )
+
+            wait_timeout = 1.0
+            if deadline is not None:
+                wait_timeout = min(wait_timeout, max(0.1, deadline - now))
+            if next_heartbeat_at is not None:
+                wait_timeout = min(wait_timeout, max(0.1, next_heartbeat_at - now))
+
+            try:
+                stdout, stderr = process.communicate(timeout=wait_timeout)
+                break
+            except subprocess.TimeoutExpired:
+                now = time.monotonic()
+                if next_heartbeat_at is not None and now >= next_heartbeat_at:
+                    elapsed_seconds = int(now - start_time)
+                    emit_progress(
+                        f"{profile_name} for {prefix} still running after {elapsed_seconds}s.",
+                        artifact_dir=artifact_dir,
+                    )
+                    next_heartbeat_at = now + heartbeat_seconds
+
+        result = subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
     except subprocess.TimeoutExpired as exc:
         stdout = exc.stdout or ""
         stderr = (exc.stderr or "").rstrip()
@@ -231,6 +305,11 @@ def invoke_agent(
     write_text(artifact_dir / f"{prefix}.response.json", json.dumps(payload, indent=2) + "\n")
     if payload is not envelope:
         write_text(artifact_dir / f"{prefix}.envelope.json", json.dumps(envelope, indent=2) + "\n")
+    elapsed_seconds = int(time.monotonic() - start_time)
+    emit_progress(
+        f"Completed {profile_name} for {prefix} in {elapsed_seconds}s.",
+        artifact_dir=artifact_dir,
+    )
     return payload, resolved_permission
 
 
@@ -422,6 +501,7 @@ def main() -> int:
     parser.add_argument("--reviewer-permission", default=None, help="Permission profile for reviewer")
     parser.add_argument("--rounds", type=int, default=None, help="Maximum build/review rounds")
     parser.add_argument("--agent-timeout-seconds", type=int, default=None, help="Timeout per agent invocation in seconds")
+    parser.add_argument("--agent-heartbeat-seconds", type=int, default=None, help="Status heartbeat interval while an agent is running")
     parser.add_argument("--create-worktree", action="store_true", help="Create an isolated git worktree for the run")
     parser.add_argument("--worktree-root", default=None, help="Directory under which task worktrees should be created")
     parser.add_argument("--dry-run", action="store_true", help="Print the resolved run plan and commands without executing agents")
@@ -456,6 +536,14 @@ def main() -> int:
     )
     if agent_timeout_seconds < 1:
         raise SystemExit("--agent-timeout-seconds must be at least 1")
+
+    agent_heartbeat_seconds = (
+        int(config.get("default_agent_heartbeat_seconds", 30))
+        if args.agent_heartbeat_seconds is None
+        else args.agent_heartbeat_seconds
+    )
+    if agent_heartbeat_seconds < 1:
+        raise SystemExit("--agent-heartbeat-seconds must be at least 1")
 
     task_spec = read_text(task_path)
     baseline = git(base_repo, "rev-parse", "HEAD")
@@ -493,6 +581,7 @@ def main() -> int:
         "builder_permission_requested": args.builder_permission,
         "reviewer_permission_requested": args.reviewer_permission,
         "agent_timeout_seconds": agent_timeout_seconds,
+        "agent_heartbeat_seconds": agent_heartbeat_seconds,
         "create_worktree": args.create_worktree,
         "worktree_branch": worktree_branch,
         "timestamp_utc": timestamp,
@@ -531,6 +620,7 @@ def main() -> int:
             "builder_permission": final_builder_permission,
             "reviewer_permission": final_reviewer_permission,
             "agent_timeout_seconds": agent_timeout_seconds,
+            "agent_heartbeat_seconds": agent_heartbeat_seconds,
             "worktree_branch": worktree_branch,
             "create_worktree": args.create_worktree,
             "artifact_dir": str(artifact_dir),
@@ -550,6 +640,10 @@ def main() -> int:
 
     for round_number in range(1, max_rounds + 1):
         rounds_completed = round_number
+        emit_progress(
+            f"Round {round_number}/{max_rounds}: preparing builder {args.builder}.",
+            artifact_dir=artifact_dir,
+        )
         builder_prompt = render_template(
             builder_template,
             {
@@ -570,6 +664,7 @@ def main() -> int:
             prefix=f"round-{round_number}.builder",
             permission_name=args.builder_permission,
             timeout_seconds=agent_timeout_seconds,
+            heartbeat_seconds=agent_heartbeat_seconds,
         )
 
         diff_stat, diff_patch, final_status_short = collect_diff(repo_for_run, baseline)
@@ -577,6 +672,10 @@ def main() -> int:
         write_text(artifact_dir / f"round-{round_number}.diff.patch", diff_patch)
         write_text(artifact_dir / f"round-{round_number}.status.txt", final_status_short + ("\n" if final_status_short else ""))
 
+        emit_progress(
+            f"Round {round_number}/{max_rounds}: preparing reviewer {args.reviewer}.",
+            artifact_dir=artifact_dir,
+        )
         reviewer_prompt = render_template(
             reviewer_template,
             {
@@ -597,6 +696,7 @@ def main() -> int:
             prefix=f"round-{round_number}.reviewer",
             permission_name=args.reviewer_permission,
             timeout_seconds=agent_timeout_seconds,
+            heartbeat_seconds=agent_heartbeat_seconds,
         )
 
         round_summaries.append(
@@ -661,6 +761,7 @@ def main() -> int:
         "builder_permission": final_builder_permission,
         "reviewer_permission": final_reviewer_permission,
         "agent_timeout_seconds": agent_timeout_seconds,
+        "agent_heartbeat_seconds": agent_heartbeat_seconds,
         "worktree_branch": worktree_branch,
         "rounds_completed": rounds_completed,
         "max_rounds": max_rounds,

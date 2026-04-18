@@ -86,6 +86,9 @@ Using different model families can give you a more independent second opinion. U
 - Human-readable handoff
   - Every run ends with a markdown summary for fast merge decisions
   - If the final allowed review still has blocking feedback, the summary calls that out explicitly as an escalation
+- Runtime progress reporting
+  - The orchestrator emits stage changes and periodic heartbeats while builder or reviewer runs are in flight
+  - Long review passes should no longer look silent from the parent agent
 - One-agent orchestration entry points
   - A Codex skill is included
   - A Claude custom-agent example is included
@@ -131,6 +134,8 @@ Other useful defaults in the same file:
   - max builder/reviewer passes before the run escalates to a human
 - `default_agent_timeout_seconds`
   - per-agent timeout so a hung CLI does not stall the whole orchestrator
+- `default_agent_heartbeat_seconds`
+  - heartbeat interval for in-flight builder or reviewer progress updates
 
 ## Setup
 

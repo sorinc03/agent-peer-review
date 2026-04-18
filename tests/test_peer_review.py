@@ -287,6 +287,87 @@ class PeerReviewCliTest(unittest.TestCase):
             self.assertTrue(stderr_path.exists())
             self.assertIn("Timed out after 1 seconds.", stderr_path.read_text(encoding="utf-8"))
 
+    def test_agent_heartbeat_reports_progress_while_waiting(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo = Path(tmpdir) / "repo"
+            repo.mkdir()
+            self.init_git_repo(repo)
+            task = repo / "task.md"
+            self.write_task(task)
+            slow_agent = repo / "slow_agent.py"
+            slow_agent.write_text(
+                textwrap.dedent(
+                    """
+                    import json
+                    import time
+
+                    time.sleep(2)
+                    print(json.dumps({}))
+                    """
+                ).strip()
+                + "\n",
+                encoding="utf-8",
+            )
+            config = repo / "agents.json"
+            config.write_text(
+                json.dumps(
+                    {
+                        "default_rounds": 1,
+                        "default_agent_timeout_seconds": 10,
+                        "profiles": {
+                            "slow-builder": {
+                                "role": "builder",
+                                "vendor": "test",
+                                "command": [sys.executable, str(slow_agent)],
+                                "permission_profiles": {"default": []},
+                                "default_permission": "default",
+                            },
+                            "slow-reviewer": {
+                                "role": "reviewer",
+                                "vendor": "test",
+                                "command": [sys.executable, str(slow_agent)],
+                                "permission_profiles": {"default": []},
+                                "default_permission": "default",
+                            },
+                        },
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            result = self.run_script(
+                "--repo",
+                str(repo),
+                "--task",
+                str(task),
+                "--builder",
+                "slow-builder",
+                "--reviewer",
+                "slow-reviewer",
+                "--builder-permission",
+                "default",
+                "--reviewer-permission",
+                "default",
+                "--agent-heartbeat-seconds",
+                "1",
+                "--config",
+                str(config),
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("Starting slow-builder for round-1.builder", result.stderr)
+            self.assertIn("slow-builder for round-1.builder still running after 1s", result.stderr)
+            self.assertIn("Completed slow-builder for round-1.builder", result.stderr)
+            payload = json.loads(result.stdout)
+            self.assertEqual(payload["agent_heartbeat_seconds"], 1)
+            artifact_root = repo / ".peer-review" / "runs"
+            run_dirs = [path for path in artifact_root.iterdir() if path.is_dir()]
+            self.assertEqual(len(run_dirs), 1)
+            progress_log = run_dirs[0] / "progress.log"
+            self.assertTrue(progress_log.exists())
+            self.assertIn("still running after 1s", progress_log.read_text(encoding="utf-8"))
+
 
 if __name__ == "__main__":
     unittest.main()

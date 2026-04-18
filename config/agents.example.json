@@ -1,6 +1,7 @@
 {
   "default_rounds": 2,
   "default_agent_timeout_seconds": 1800,
+  "default_agent_heartbeat_seconds": 30,
   "profiles": {
     "codex-builder": {
       "role": "builder",
